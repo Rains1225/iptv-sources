@@ -1,0 +1,45 @@
+name: refresh curated live list
+
+# Every 6 hours at minute 23 (UTC) -- offset from schedule.yml's every-2h build
+# (0 */2 * * *) so the two workflows do not push at the same instant.
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-curated-live
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Aggregate upstream sources and rebuild curated list
+        run: python scripts/refresh_live.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/live.m3u public/iptv_cn_1080p_plus.m3u
+          if git diff --cached --quiet; then
+            echo "No change in the curated list, skipping commit."
+            exit 0
+          fi
+          git commit -m "chore: auto-refresh curated China IPTV list"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "Curated list updated; Cloudflare Pages will rebuild on this push."
